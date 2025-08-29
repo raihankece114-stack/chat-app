@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Obrolan Peer Otomatis</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
+    #chat { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; background: #fff; }
+    textarea { width: 100%; margin-top: 10px; }
+    button { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Obrolan Peer-to-Peer Otomatis</h2>
+  <div id="chat"></div>
+
+  <textarea id="message" placeholder="Ketik pesan Anda..."></textarea>
+  <button onclick="sendMessage()">Kirim</button>
+  <button onclick="startConnection()">Mulai Koneksi</button>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const messageInput = document.getElementById('message');
+
+    // Ganti URL ini dengan alamat server WebSocket kamu
+    const socket = new WebSocket("wss://chat-server.up.railway.app");
+
+    let pc = new RTCPeerConnection();
+    let dataChannel;
+
+    socket.onopen = () => {
+      console.log("Terhubung ke server sinyal");
+    };
+
+    socket.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "offer") {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.send(JSON.stringify({ type: "answer", answer }));
+      }
+
+      if (data.type === "answer") {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+
+      if (data.type === "candidate") {
+        await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
+    };
+
+    pc.onicecandidate = e => {
+      if (e.candidate) {
+        socket.send(JSON.stringify({ type: "candidate", candidate: e.candidate }));
+      }
+    };
+
+    pc.ondatachannel = e => {
+      dataChannel = e.channel;
+      dataChannel.onmessage = e => {
+        chat.innerHTML += `<div><strong>Teman:</strong> ${e.data}</div>`;
+      };
+    };
+
+    function sendMessage() {
+      const msg = messageInput.value;
+      chat.innerHTML += `<div><strong>Anda:</strong> ${msg}</div>`;
+      dataChannel.send(msg);
+      messageInput.value = '';
+    }
+
+    async function startConnection() {
+      dataChannel = pc.createDataChannel("chat");
+      dataChannel.onmessage = e => {
+        chat.innerHTML += `<div><strong>Teman:</strong> ${e.data}</div>`;
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.send(JSON.stringify({ type: "offer", offer }));
+    }
+  </script>
+</body>
+</html>
